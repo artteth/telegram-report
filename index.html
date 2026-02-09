@@ -3,10 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Размерная сетка с select</title>
+<title>Размерная сетка с одинаковым количеством</title>
 <style>
 body { font-family: sans-serif; padding: 20px; }
 h2 { margin-bottom: 16px; }
+.controls { margin-bottom: 10px; }
 .size-row { display: flex; align-items: center; flex-wrap: wrap; }
 .size-item { display: flex; flex-direction: column; align-items: center; margin: 5px; }
 .size-item select { width: 50px; font-size: 16px; }
@@ -20,6 +21,10 @@ pre { background: #f4f4f4; padding: 10px; }
 
 <h2>Размерная сетка</h2>
 
+<div class="controls">
+  <label><input type="checkbox" id="sameQty" checked> Одинаковое количество для всех активных размеров</label>
+</div>
+
 <div class="size-row" id="sizeRow"></div>
 
 <button id="submitBtn">Посмотреть JSON</button>
@@ -32,6 +37,7 @@ pre { background: #f4f4f4; padding: 10px; }
 const sizes = [48,50,52,54,56,58,60,62,64];
 const maxQty = 10;
 const sizeRow = document.getElementById('sizeRow');
+const sameQtyCheckbox = document.getElementById('sameQty');
 
 // Генерация элементов
 sizes.forEach(size=>{
@@ -61,12 +67,19 @@ sizes.forEach(size=>{
   checkbox.addEventListener('change', ()=>{
     select.disabled = !checkbox.checked;
     if(!checkbox.checked) select.value = 0;
+    if(sameQtyCheckbox.checked && checkbox.checked){
+      updateAllActive(select.value);
+    }
   });
   
-  // Авто-снятие галочки, если выбрано 0
+  // Изменение select
   select.addEventListener('change', ()=>{
-    checkbox.checked = select.value > 0;
-    select.disabled = !checkbox.checked;
+    if(parseInt(select.value) > 0) checkbox.checked = true;
+    else checkbox.checked = false;
+    
+    if(sameQtyCheckbox.checked){
+      updateAllActive(select.value);
+    }
   });
   
   div.appendChild(checkbox);
@@ -74,6 +87,17 @@ sizes.forEach(size=>{
   div.appendChild(select);
   sizeRow.appendChild(div);
 });
+
+// Функция обновления всех активных размеров при sameQty
+function updateAllActive(value){
+  sizes.forEach(size=>{
+    const chk = document.getElementById(`chk-${size}`);
+    const sel = document.getElementById(`qty-${size}`);
+    if(chk.checked && sel !== document.activeElement){ // не меняем текущий select
+      sel.value = value;
+    }
+  });
+}
 
 // Кнопка показать JSON
 document.getElementById('submitBtn').addEventListener('click', ()=>{
