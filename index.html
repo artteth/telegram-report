@@ -4,220 +4,110 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Отчёт бригады</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 body { font-family: sans-serif; padding: 16px; }
-input, button, select { width: 100%; margin: 8px 0; padding: 10px; font-size: 16px; }
-.size-row { display: flex; flex-wrap: wrap; margin-top: 10px; }
-.size-item { display: flex; flex-direction: column; align-items: center; margin: 4px; }
-.size-item select { width: 50px; font-size: 16px; }
-.size-item input[type="checkbox"] { transform: scale(1.5); margin-bottom: 2px; }
-.size-item select:disabled { background: #eee; }
-.controls { margin-top: 10px; }
-.error { color: red; font-size: 14px; }
+button, input { width: 100%; margin: 8px 0; padding: 12px; font-size: 16px; }
+.selector { background: #f2f2f2; text-align: left; }
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.4);
+  display: none;
+}
+.modal {
+  background: #fff;
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  max-height: 70%;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 12px 12px 0 0;
+}
+.option {
+  padding: 14px;
+  border-bottom: 1px solid #eee;
+}
+.option:active { background: #eee; }
 </style>
 </head>
 <body>
 
 <h3>Отчёт бригады</h3>
 
-<label>Type</label>
-<select id="typeSelect"><option value="">Выберите тип</option></select>
+<button id="typeBtn" class="selector">Type: выбрать</button>
+<button id="modelBtn" class="selector" disabled>Model: выбрать</button>
+<button id="designBtn" class="selector" disabled>Design: выбрать</button>
 
-<label>Model</label>
-<input list="modelsList" id="modelInput" placeholder="Модель изделия">
-<datalist id="modelsList"></datalist>
-<div id="modelError" class="error"></div>
-
-<label>Design</label>
-<select id="designSelect"><option value="">Выберите дизайн</option></select>
-
-<label>Размеры</label>
-<div class="controls">
-  <label><input type="checkbox" id="sameQty" checked> Одинаковое количество для всех активных размеров</label>
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal"></div>
 </div>
-<div class="size-row" id="sizeRow"></div>
-
-<input id="brigade" placeholder="№ бригады">
-<input id="people" type="number" placeholder="Людей в бригаде">
-
-<button id="sendBtn">Отправить</button>
-<h3>JSON для проверки:</h3>
-<pre id="jsonOutput">{}</pre>
 
 <script>
-const tg = window.Telegram.WebApp;
-tg.expand();
-tg.ready();
-
-const SCRIPT_URL = 'ВСТАВЬ_СЮДА_URL_ВЕБПРИЛОЖЕНИЯ';
-
-const sizes = [48,50,52,54,56,58,60,62,64];
-const maxQty = 10;
-const sizeRow = document.getElementById('sizeRow');
-const sameQtyCheckbox = document.getElementById('sameQty');
-
-let rawModels = [];
-let modelStructure = {};
-const typeSelect = document.getElementById('typeSelect');
-const modelInput = document.getElementById('modelInput');
-const modelsList = document.getElementById('modelsList');
-const designSelect = document.getElementById('designSelect');
-const modelError = document.getElementById('modelError');
-
-// Создаём поля размеров
-function createSizes() {
-  sizeRow.innerHTML = '';
-  sizes.forEach(size=>{
-    const div = document.createElement('div');
-    div.className = 'size-item';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = true;
-    checkbox.id = `chk-${size}`;
-
-    const label = document.createElement('label');
-    label.textContent = size;
-    label.htmlFor = checkbox.id;
-
-    const select = document.createElement('select');
-    select.id = `qty-${size}`;
-    for(let i=0;i<=maxQty;i++){
-      const o = document.createElement('option');
-      o.value = i; o.textContent = i;
-      select.appendChild(o);
-    }
-
-    checkbox.addEventListener('change', ()=>{
-      select.disabled = !checkbox.checked;
-      if(!checkbox.checked) select.value = 0;
-      if(sameQtyCheckbox.checked && checkbox.checked){
-        updateAllActive(select.value);
-      }
-    });
-
-    select.addEventListener('change', ()=>{
-      checkbox.checked = parseInt(select.value) > 0;
-      if(sameQtyCheckbox.checked){
-        updateAllActive(select.value);
-      }
-    });
-
-    div.appendChild(checkbox);
-    div.appendChild(label);
-    div.appendChild(select);
-    sizeRow.appendChild(div);
-  });
-}
-
-// Обновление всех активных размеров
-function updateAllActive(value){
-  sizes.forEach(size=>{
-    const chk = document.getElementById(`chk-${size}`);
-    const sel = document.getElementById(`qty-${size}`);
-    if(chk.checked && sel !== document.activeElement){
-      sel.value = value;
-    }
-  });
-}
-
-// Загружаем модели из Google Script
-fetch(SCRIPT_URL + '?action=models')
-  .then(r=>r.json())
-  .then(data=>{
-    rawModels = data;
-    buildModelStructure();
-    populateTypeOptions();
-    populateModelList();
-  }).catch(err=>console.error(err));
-
-// Структура Type -> Model -> Design
-function buildModelStructure(){
-  modelStructure = {};
-  rawModels.forEach(item=>{
-    const type = item.Type.toString();
-    const model = item.Model.toString();
-    const design = item.Design.toString();
-    if(!modelStructure[type]) modelStructure[type] = {};
-    if(!modelStructure[type][model]) modelStructure[type][model] = [];
-    modelStructure[type][model].push(design);
-  });
-}
-
-// Заполняем Type
-function populateTypeOptions(){
-  typeSelect.innerHTML = '<option value="">Выберите тип</option>';
-  Object.keys(modelStructure).sort().forEach(t=>{
-    const o = document.createElement('option'); o.value=t; o.textContent=t;
-    typeSelect.appendChild(o);
-  });
-}
-
-// Заполняем datalist для моделей
-function populateModelList(){
-  modelsList.innerHTML = '';
-  rawModels.forEach(m=>{
-    const o = document.createElement('option'); o.value = m.Model;
-    modelsList.appendChild(o);
-  });
-}
-
-// Динамическая проверка модели
-modelInput.addEventListener('input', e=>{
-  const val = e.target.value;
-  modelError.textContent = rawModels.some(m=>m.Model===val) ? '' : '❌ Такой модели нет';
-  populateDesignOptions();
-});
-
-// Заполнение дизайнов
-function populateDesignOptions(){
-  const val = modelInput.value;
-  designSelect.innerHTML = '<option value="">Выберите дизайн</option>';
-  const designs = rawModels.filter(m=>m.Model===val).map(m=>m.Design);
-  [...new Set(designs)].sort().forEach(d=>{
-    const o = document.createElement('option');
-    o.value = d; o.textContent='/' + d;
-    designSelect.appendChild(o);
-  });
-}
-
-// Кнопка "одинаковое количество"
-sameQtyCheckbox.addEventListener('change', ()=>{
-  if(sameQtyCheckbox.checked){
-    const firstQty = parseInt(document.getElementById(`qty-${sizes[0]}`).value) || 0;
-    updateAllActive(firstQty);
+/* 🔹 ДАННЫЕ (потом подключим Google Script) */
+const data = {
+  "Футболка": {
+    "FT-001": ["01", "02"],
+    "FT-002": ["01"]
+  },
+  "Худи": {
+    "HD-10": ["A", "B"]
   }
-});
+};
 
-// Кнопка отправки
-document.getElementById('sendBtn').addEventListener('click', ()=>{
-  const sizeData = {};
-  sizes.forEach(size=>{
-    const chk = document.getElementById(`chk-${size}`);
-    const qty = parseInt(document.getElementById(`qty-${size}`).value) || 0;
-    if(chk.checked && qty>0) sizeData[size] = qty;
+let currentType = '';
+let currentModel = '';
+
+const overlay = document.getElementById('overlay');
+const modal = document.getElementById('modal');
+
+function openList(title, items, onSelect) {
+  modal.innerHTML = `<h4>${title}</h4>`;
+  items.forEach(v => {
+    const d = document.createElement('div');
+    d.className = 'option';
+    d.textContent = v;
+    d.onclick = () => {
+      overlay.style.display = 'none';
+      onSelect(v);
+    };
+    modal.appendChild(d);
   });
+  overlay.style.display = 'block';
+}
 
-  const payload = {
-    telegram_id: tg.initDataUnsafe?.user?.id,
-    type: typeSelect.value,
-    model: modelInput.value,
-    design: designSelect.value,
-    brigade: document.getElementById('brigade').value,
-    people: document.getElementById('people').value,
-    sizes: sizeData
-  };
+overlay.onclick = e => {
+  if (e.target === overlay) overlay.style.display = 'none';
+};
 
-  jsonOutput.textContent = JSON.stringify(payload, null, 2);
+/* TYPE */
+typeBtn.onclick = () => {
+  openList('Выберите Type', Object.keys(data), val => {
+    currentType = val;
+    typeBtn.textContent = 'Type: ' + val;
+    modelBtn.textContent = 'Model: выбрать';
+    designBtn.textContent = 'Design: выбрать';
+    modelBtn.disabled = false;
+    designBtn.disabled = true;
+  });
+};
 
-  fetch(SCRIPT_URL, {method:'POST', body:JSON.stringify(payload)})
-    .then(()=>tg.showAlert('Сохранено ✅'))
-    .catch(err=>tg.showAlert('Ошибка: '+err.message));
-});
+/* MODEL */
+modelBtn.onclick = () => {
+  openList('Выберите Model', Object.keys(data[currentType]), val => {
+    currentModel = val;
+    modelBtn.textContent = 'Model: ' + val;
+    designBtn.disabled = false;
+  });
+};
 
-// Создаём размеры на странице
-createSizes();
+/* DESIGN */
+designBtn.onclick = () => {
+  openList(
+    'Выберите Design',
+    data[currentType][currentModel],
+    val => designBtn.textContent = 'Design: /' + val
+  );
+};
 </script>
+
 </body>
 </html>
