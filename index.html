@@ -3,112 +3,230 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Размерная сетка с одинаковым количеством</title>
+<title>Отчёт бригады</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-body { font-family: sans-serif; padding: 20px; }
-h2 { margin-bottom: 16px; }
-.controls { margin-bottom: 10px; }
-.size-row { display: flex; align-items: center; flex-wrap: wrap; }
-.size-item { display: flex; flex-direction: column; align-items: center; margin: 5px; }
+body { font-family: sans-serif; padding: 16px; }
+h3 { margin-bottom: 16px; }
+label { font-weight: bold; margin-top: 10px; display: block; }
+select, input, button { padding: 6px; margin: 4px 0; font-size: 16px; }
+.size-row { display: flex; flex-wrap: wrap; margin-top: 10px; }
+.size-item { display: flex; flex-direction: column; align-items: center; margin: 4px; }
 .size-item select { width: 50px; font-size: 16px; }
-.size-item input[type="checkbox"] { margin-bottom: 4px; transform: scale(1.5); }
+.size-item input[type="checkbox"] { transform: scale(1.5); margin-bottom: 2px; }
 .size-item select:disabled { background: #eee; }
-button { margin-top: 20px; padding: 10px 20px; font-size: 16px; }
+.controls { margin-top: 10px; }
+button { margin-top: 16px; font-size: 16px; padding: 8px 16px; }
 pre { background: #f4f4f4; padding: 10px; }
 </style>
 </head>
 <body>
 
-<h2>Размерная сетка</h2>
+<h3>Отчёт бригады</h3>
 
+<label>Type</label>
+<select id="typeSelect"><option value="">Выберите тип</option></select>
+
+<label>Model</label>
+<select id="modelSelect"><option value="">Выберите модель</option></select>
+
+<label>Design</label>
+<select id="designSelect"><option value="">Выберите дизайн</option></select>
+
+<label>Размеры</label>
 <div class="controls">
   <label><input type="checkbox" id="sameQty" checked> Одинаковое количество для всех активных размеров</label>
 </div>
-
 <div class="size-row" id="sizeRow"></div>
 
-<button id="submitBtn">Посмотреть JSON</button>
+<input id="brigade" placeholder="№ бригады">
+<input id="people" type="number" placeholder="Людей в бригаде">
 
-<h3>JSON для отправки:</h3>
+<button id="sendBtn">Отправить</button>
+<h3>JSON для проверки:</h3>
 <pre id="jsonOutput">{}</pre>
 
 <script>
-// Диапазон размеров
+const tg = window.Telegram.WebApp;
+tg.expand();
+tg.ready();
+
+const SCRIPT_URL = 'ВАШ_GOOGLE_SCRIPT_URL'; // сюда вставьте URL веб-приложения
+
 const sizes = [48,50,52,54,56,58,60,62,64];
 const maxQty = 10;
+const typeSelect = document.getElementById('typeSelect');
+const modelSelect = document.getElementById('modelSelect');
+const designSelect = document.getElementById('designSelect');
 const sizeRow = document.getElementById('sizeRow');
 const sameQtyCheckbox = document.getElementById('sameQty');
+const brigade = document.getElementById('brigade');
+const people = document.getElementById('people');
+const sendBtn = document.getElementById('sendBtn');
+const jsonOutput = document.getElementById('jsonOutput');
 
-// Генерация элементов
-sizes.forEach(size=>{
-  const div = document.createElement('div');
-  div.className = 'size-item';
-  
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = true;
-  checkbox.id = `chk-${size}`;
-  
-  const label = document.createElement('label');
-  label.textContent = size;
-  label.htmlFor = checkbox.id;
-  
-  const select = document.createElement('select');
-  select.id = `qty-${size}`;
-  
-  for(let i=0;i<=maxQty;i++){
-    const option = document.createElement('option');
-    option.value = i;
-    option.textContent = i;
-    select.appendChild(option);
-  }
-  
-  // Деактивация select, если снята галочка
-  checkbox.addEventListener('change', ()=>{
-    select.disabled = !checkbox.checked;
-    if(!checkbox.checked) select.value = 0;
-    if(sameQtyCheckbox.checked && checkbox.checked){
-      updateAllActive(select.value);
-    }
-  });
-  
-  // Изменение select
-  select.addEventListener('change', ()=>{
-    if(parseInt(select.value) > 0) checkbox.checked = true;
-    else checkbox.checked = false;
+let rawModels = [];
+let modelStructure = {};
+
+// Генерация элементов размеров
+function createSizes() {
+  sizeRow.innerHTML = '';
+  sizes.forEach(size=>{
+    const div = document.createElement('div');
+    div.className = 'size-item';
     
-    if(sameQtyCheckbox.checked){
-      updateAllActive(select.value);
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = true;
+    checkbox.id = `chk-${size}`;
+    
+    const label = document.createElement('label');
+    label.textContent = size;
+    label.htmlFor = checkbox.id;
+    
+    const select = document.createElement('select');
+    select.id = `qty-${size}`;
+    for(let i=0;i<=maxQty;i++){
+      const option = document.createElement('option');
+      option.value = i;
+      option.textContent = i;
+      select.appendChild(option);
     }
+    
+    // галочка отключает поле
+    checkbox.addEventListener('change', ()=>{
+      select.disabled = !checkbox.checked;
+      if(!checkbox.checked) select.value = 0;
+      if(sameQtyCheckbox.checked && checkbox.checked){
+        updateAllActive(select.value);
+      }
+    });
+    
+    select.addEventListener('change', ()=>{
+      checkbox.checked = parseInt(select.value) > 0;
+      if(sameQtyCheckbox.checked){
+        updateAllActive(select.value);
+      }
+    });
+    
+    div.appendChild(checkbox);
+    div.appendChild(label);
+    div.appendChild(select);
+    sizeRow.appendChild(div);
   });
-  
-  div.appendChild(checkbox);
-  div.appendChild(label);
-  div.appendChild(select);
-  sizeRow.appendChild(div);
-});
+}
 
-// Функция обновления всех активных размеров при sameQty
+// обновление всех активных размеров
 function updateAllActive(value){
   sizes.forEach(size=>{
     const chk = document.getElementById(`chk-${size}`);
     const sel = document.getElementById(`qty-${size}`);
-    if(chk.checked && sel !== document.activeElement){ // не меняем текущий select
+    if(chk.checked && sel !== document.activeElement){
       sel.value = value;
     }
   });
 }
 
-// Кнопка показать JSON
-document.getElementById('submitBtn').addEventListener('click', ()=>{
-  const output = {};
+// загрузка моделей из Google Script
+fetch(SCRIPT_URL + '?action=models')
+  .then(r=>r.json())
+  .then(data=>{
+    rawModels = data.filter(v=>v);
+    buildModelStructure();
+    populateDropdowns();
+  })
+  .catch(err=>console.error(err));
+
+// структура для фильтра
+function buildModelStructure(){
+  modelStructure = {};
+  rawModels.forEach(item=>{
+    const type = item.Type.toString();
+    const model = item.Model.toString();
+    const design = item.Design.toString();
+    if(!modelStructure[type]) modelStructure[type] = {};
+    if(!modelStructure[type][model]) modelStructure[type][model] = [];
+    modelStructure[type][model].push(design);
+  });
+}
+
+// заполнение dropdown
+function populateDropdowns(){
+  populateTypeOptions();
+  populateModelOptions();
+  populateDesignOptions();
+}
+
+function populateTypeOptions(){
+  typeSelect.innerHTML = '<option value="">Выберите тип</option>';
+  Object.keys(modelStructure).sort().forEach(t=>{
+    const o = document.createElement('option'); o.value=t; o.textContent=t;
+    typeSelect.appendChild(o);
+  });
+}
+
+function populateModelOptions(){
+  const selectedType = typeSelect.value;
+  modelSelect.innerHTML = '<option value="">Выберите модель</option>';
+  const models = selectedType ? Object.keys(modelStructure[selectedType]) : [...new Set(rawModels.map(m=>m.Model))];
+  models.sort().forEach(m=>{
+    const o = document.createElement('option'); o.value=m; o.textContent=m;
+    modelSelect.appendChild(o);
+  });
+}
+
+function populateDesignOptions(){
+  const selectedType = typeSelect.value;
+  const selectedModel = modelSelect.value;
+  designSelect.innerHTML = '<option value="">Выберите дизайн</option>';
+  let designs = [];
+  if(selectedType && selectedModel) designs = modelStructure[selectedType][selectedModel];
+  else if(selectedModel) designs = rawModels.filter(x=>x.Model===selectedModel).map(x=>x.Design);
+  else if(selectedType) designs = Object.values(modelStructure[selectedType]).flat();
+  else designs = rawModels.map(x=>x.Design);
+  [...new Set(designs)].sort().forEach(d=>{
+    const o = document.createElement('option'); o.value=d; o.textContent='/' + d;
+    designSelect.appendChild(o);
+  });
+}
+
+// события изменения
+[typeSelect, modelSelect, designSelect].forEach(sel=>{
+  sel.addEventListener('change', populateDropdowns);
+});
+
+sameQtyCheckbox.addEventListener('change', ()=>{
+  if(sameQtyCheckbox.checked){
+    const firstQty = parseInt(document.getElementById(`qty-${sizes[0]}`).value) || 0;
+    updateAllActive(firstQty);
+  }
+});
+
+sendBtn.addEventListener('click', ()=>{
+  const sizeData = {};
   sizes.forEach(size=>{
     const chk = document.getElementById(`chk-${size}`);
     const qty = parseInt(document.getElementById(`qty-${size}`).value) || 0;
-    if(chk.checked && qty > 0) output[size] = qty;
+    if(chk.checked && qty > 0) sizeData[size] = qty;
   });
-  document.getElementById('jsonOutput').textContent = JSON.stringify(output, null, 2);
+  
+  const payload = {
+    telegram_id: tg.initDataUnsafe?.user?.id,
+    model: `${typeSelect.value}-${modelSelect.value}/${designSelect.value}`,
+    brigade: brigade.value,
+    people: people.value,
+    sizes: sizeData
+  };
+  
+  jsonOutput.textContent = JSON.stringify(payload, null, 2);
+  
+  fetch(SCRIPT_URL, {method:'POST', body:JSON.stringify(payload)})
+    .then(()=>tg.showAlert('Отправлено ✅'))
+    .catch(err=>tg.showAlert('Ошибка отправки: '+err.message));
 });
+
+// создание размеров на странице
+createSizes();
 </script>
 
 </body>
