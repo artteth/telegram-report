@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Отчёт бригады</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
 <style>
 body { font-family: sans-serif; padding: 16px; }
 button, input { width: 100%; margin: 8px 0; padding: 12px; font-size: 16px; }
@@ -29,35 +31,40 @@ button, input { width: 100%; margin: 8px 0; padding: 12px; font-size: 16px; }
 .option:active { background: #eee; }
 </style>
 </head>
-<body>
 
+<body>
 <h3>Отчёт бригады</h3>
 
 <button id="typeBtn" class="selector">Type: выбрать</button>
 <button id="modelBtn" class="selector" disabled>Model: выбрать</button>
 <button id="designBtn" class="selector" disabled>Design: выбрать</button>
 
+<input id="brigade" placeholder="№ бригады">
+<input id="people" type="number" placeholder="Людей в бригаде">
+
+<button onclick="send()">Отправить</button>
+
 <div class="overlay" id="overlay">
   <div class="modal" id="modal"></div>
 </div>
 
 <script>
-/* 🔹 ДАННЫЕ (потом подключим Google Script) */
-const data = {
-  "Футболка": {
-    "FT-001": ["01", "02"],
-    "FT-002": ["01"]
-  },
-  "Худи": {
-    "HD-10": ["A", "B"]
-  }
-};
+const tg = window.Telegram.WebApp;
+tg.expand();
 
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw_sM-VQz2gzU1wPE0kgOuXWUDyX40kIjkfOT_l4d1s25Bxtx3Qko_pXo8MUwRDanWlLQ/exec';
+
+let catalog = {};
 let currentType = '';
 let currentModel = '';
+let currentDesign = '';
 
 const overlay = document.getElementById('overlay');
 const modal = document.getElementById('modal');
+
+fetch(SCRIPT_URL + '?action=catalog')
+  .then(r => r.json())
+  .then(data => catalog = data);
 
 function openList(title, items, onSelect) {
   modal.innerHTML = `<h4>${title}</h4>`;
@@ -78,36 +85,45 @@ overlay.onclick = e => {
   if (e.target === overlay) overlay.style.display = 'none';
 };
 
-/* TYPE */
 typeBtn.onclick = () => {
-  openList('Выберите Type', Object.keys(data), val => {
-    currentType = val;
-    typeBtn.textContent = 'Type: ' + val;
-    modelBtn.textContent = 'Model: выбрать';
-    designBtn.textContent = 'Design: выбрать';
+  openList('Тип изделия', Object.keys(catalog), v => {
+    currentType = v;
+    typeBtn.textContent = 'Type: ' + v;
     modelBtn.disabled = false;
     designBtn.disabled = true;
+    modelBtn.textContent = 'Model: выбрать';
+    designBtn.textContent = 'Design: выбрать';
   });
 };
 
-/* MODEL */
 modelBtn.onclick = () => {
-  openList('Выберите Model', Object.keys(data[currentType]), val => {
-    currentModel = val;
-    modelBtn.textContent = 'Model: ' + val;
+  openList('Модель', Object.keys(catalog[currentType]), v => {
+    currentModel = v;
+    modelBtn.textContent = 'Model: ' + v;
     designBtn.disabled = false;
   });
 };
 
-/* DESIGN */
 designBtn.onclick = () => {
-  openList(
-    'Выберите Design',
-    data[currentType][currentModel],
-    val => designBtn.textContent = 'Design: /' + val
-  );
+  openList('Дизайн', catalog[currentType][currentModel], v => {
+    currentDesign = v;
+    designBtn.textContent = 'Design: /' + v;
+  });
 };
-</script>
 
+function send() {
+  fetch(SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: currentType,
+      model: currentModel,
+      design: currentDesign,
+      brigade: brigade.value,
+      people: people.value,
+      telegram_id: tg.initDataUnsafe?.user?.id
+    })
+  }).then(() => tg.showAlert('Сохранено ✅'));
+}
+</script>
 </body>
 </html>
