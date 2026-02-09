@@ -10,7 +10,6 @@
   body { font-family: sans-serif; padding: 16px; }
   h3 { margin-bottom: 16px; }
   select, input, button { width: 100%; margin: 8px 0; padding: 10px; font-size: 16px; }
-  .error { color: red; font-size: 14px; margin: 4px 0; }
   #qr-reader { width: 100%; margin: 12px 0; display: none; }
 </style>
 </head>
@@ -18,25 +17,21 @@
 
 <h3>Отчёт бригады</h3>
 
-<!-- Тип изделия -->
 <label>Тип изделия</label>
 <select id="typeSelect">
   <option value="">Выберите тип</option>
 </select>
 
-<!-- Модель -->
 <label>Номер модели</label>
 <select id="modelSelect" disabled>
   <option value="">Сначала выберите тип</option>
 </select>
 
-<!-- Дизайн -->
 <label>Дизайн</label>
 <select id="designSelect" disabled>
   <option value="">Сначала выберите модель</option>
 </select>
 
-<!-- Остальные поля -->
 <input id="size" placeholder="Размер">
 <input id="qty" type="number" placeholder="Количество">
 <input id="brigade" placeholder="№ бригады">
@@ -52,10 +47,10 @@ const tg = window.Telegram.WebApp;
 tg.expand();
 tg.ready();
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby5MyqWh8toDBpG_M8Z6gNaB86IY6LrZ6qYJbLX4bbNGWx6umsyndLhczy31m_JAW8Kg/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby5MyqWh8toDBpG_M8Z6gNaB86IY6LrZ6gJbLX4bbNGWx6umsyndLhczy31m_JAW8Kg/exec';
 
 let rawModels = [];
-let modelStructure = {}; // {type: {model: [design]}}
+let modelStructure = {};
 
 const typeSelect = document.getElementById('typeSelect');
 const modelSelect = document.getElementById('modelSelect');
@@ -68,26 +63,31 @@ const brigade = document.getElementById('brigade');
 const people = document.getElementById('people');
 const sendBtn = document.getElementById('sendBtn');
 
-// Загрузка моделей
+// Загрузка моделей из Google Таблицы
 fetch(SCRIPT_URL + '?action=models')
   .then(r => r.json())
   .then(data => {
     rawModels = data.filter(v => v);
     buildModelStructure();
     populateTypes();
-  });
+  })
+  .catch(err => console.error("Ошибка загрузки моделей:", err));
 
+// Формируем структуру {Type: {Model: [Design]}}
 function buildModelStructure() {
+  modelStructure = {};
   rawModels.forEach(item => {
-    const type = item.Type;
-    const model = item.Model;
-    const design = item.Design;
+    const type = item.Type.toString();
+    const model = item.Model.toString();
+    const design = item.Design.toString();
     if (!modelStructure[type]) modelStructure[type] = {};
     if (!modelStructure[type][model]) modelStructure[type][model] = [];
     modelStructure[type][model].push(design);
   });
+  console.log("modelStructure:", modelStructure);
 }
 
+// Заполняем выпадающий список типов
 function populateTypes() {
   Object.keys(modelStructure).sort().forEach(t => {
     const o = document.createElement('option');
@@ -103,11 +103,13 @@ typeSelect.addEventListener('change', () => {
   modelSelect.innerHTML = '<option value="">Выберите модель</option>';
   designSelect.innerHTML = '<option value="">Сначала выберите модель</option>';
   designSelect.disabled = true;
+
   if (!type) {
     modelSelect.disabled = true;
     validateForm();
     return;
   }
+
   modelSelect.disabled = false;
   Object.keys(modelStructure[type]).sort().forEach(m => {
     const o = document.createElement('option');
@@ -115,6 +117,7 @@ typeSelect.addEventListener('change', () => {
     o.textContent = m;
     modelSelect.appendChild(o);
   });
+
   validateForm();
 });
 
@@ -123,11 +126,13 @@ modelSelect.addEventListener('change', () => {
   const type = typeSelect.value;
   const model = modelSelect.value;
   designSelect.innerHTML = '<option value="">Выберите дизайн</option>';
+
   if (!model) {
     designSelect.disabled = true;
     validateForm();
     return;
   }
+
   designSelect.disabled = false;
   modelStructure[type][model].sort().forEach(d => {
     const o = document.createElement('option');
@@ -135,13 +140,14 @@ modelSelect.addEventListener('change', () => {
     o.textContent = '/' + d;
     designSelect.appendChild(o);
   });
+
   validateForm();
 });
 
 // Выбор дизайна
 designSelect.addEventListener('change', validateForm);
 
-// Валидация формы
+// Проверка формы
 function validateForm() {
   const valid = typeSelect.value && modelSelect.value && designSelect.value &&
                 size.value.trim() && qty.value && brigade.value.trim() && people.value;
@@ -152,7 +158,7 @@ function validateForm() {
   document.getElementById(id).addEventListener('input', validateForm);
 });
 
-// Отправка данных
+// Отправка данных на Google Таблицу
 sendBtn.addEventListener('click', () => {
   const payload = {
     telegram_id: tg.initDataUnsafe?.user?.id,
@@ -162,12 +168,12 @@ sendBtn.addEventListener('click', () => {
     brigade: brigade.value,
     people: people.value
   };
+
   fetch(SCRIPT_URL, {
     method: 'POST',
     body: JSON.stringify(payload)
   }).then(() => {
     tg.showAlert('Сохранено ✅');
-    // Очистка формы
     typeSelect.value = '';
     modelSelect.innerHTML = '<option value="">Сначала выберите тип</option>';
     modelSelect.disabled = true;
@@ -181,7 +187,7 @@ sendBtn.addEventListener('click', () => {
   });
 });
 
-// Сканирование QR / штрих-кода
+// Сканирование QR/штрих-кода
 scanBtn.addEventListener('click', () => {
   qrReaderDiv.style.display = 'block';
   scanBtn.disabled = true;
@@ -190,22 +196,11 @@ scanBtn.addEventListener('click', () => {
     { facingMode: "environment" },
     { fps: 10, qrbox: 250 },
     decodedText => {
-      // Ожидаем формат Type-Model/Design
       const match = decodedText.match(/^(\d+)-(\d+)\/(\d+)$/);
       if (match) {
-        const type = match[1];
-        const model = match[2];
-        const design = match[3];
-
-        // Выбираем тип
-        typeSelect.value = type;
-        typeSelect.dispatchEvent(new Event('change'));
-
-        // Выбираем модель
-        modelSelect.value = model;
-        modelSelect.dispatchEvent(new Event('change'));
-
-        // Выбираем дизайн
+        const [_, type, model, design] = match;
+        typeSelect.value = type; typeSelect.dispatchEvent(new Event('change'));
+        modelSelect.value = model; modelSelect.dispatchEvent(new Event('change'));
         designSelect.value = design;
         validateForm();
       } else {
