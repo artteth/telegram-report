@@ -8,9 +8,9 @@
 
 <style>
 body { font-family: sans-serif; padding: 16px; }
-button, input { width: 100%; margin: 8px 0; padding: 10px; font-size: 16px; }
-.selector { background: #f2f2f2; text-align: left; }
-.disabled { opacity: .6; pointer-events: none; }
+button, input { width: 100%; margin: 8px 0; padding: 12px; font-size: 16px; }
+.selector { background: #f2f2f2; text-align: left; border: 1px solid #ccc; }
+.disabled { opacity: .6; }
 .overlay {
   position: fixed; inset: 0;
   background: rgba(0,0,0,.4);
@@ -20,8 +20,8 @@ button, input { width: 100%; margin: 8px 0; padding: 10px; font-size: 16px; }
   background: #fff;
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  max-height: 70%;
-  overflow-y: auto;
+  max-height: 65%;
+  overflow: auto;
   padding: 12px;
   border-radius: 12px 12px 0 0;
 }
@@ -30,12 +30,21 @@ button, input { width: 100%; margin: 8px 0; padding: 10px; font-size: 16px; }
   border-bottom: 1px solid #eee;
   cursor: pointer;
 }
-.option:hover { background: #eee; }
-.size-row { margin-top: 12px; }
-.size-item { display: flex; align-items: center; margin-bottom: 8px; }
-.size-item input[type="checkbox"] { margin-right: 10px; transform: scale(1.5); }
-.size-item span { width: 60px; font-size: 16px; }
-.size-item input[type="number"] { flex: 1; padding: 6px; font-size: 16px; }
+.option:hover { background: #EEE; }
+
+/* две строки по 5 элементов */
+.sizes {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+.size {
+  border: 1px solid #ddd;
+  padding: 6px;
+  text-align: center;
+}
+.size input[type="number"] { width: 100%; }
 </style>
 </head>
 
@@ -43,23 +52,23 @@ button, input { width: 100%; margin: 8px 0; padding: 10px; font-size: 16px; }
 <h3>Отчёт бригады</h3>
 
 <button id="typeBtn" class="selector disabled">Type: загрузка…</button>
-<button id="modelBtn" class="selector disabled">Model</button>
-<button id="designBtn" class="selector disabled">Design</button>
+<button id="modelBtn" class="selector disabled" disabled>Model</button>
+<button id="designBtn" class="selector disabled" disabled>Design</button>
 
 <label><input type="checkbox" id="sameQty" checked> одинаковое количество</label>
-<input id="commonQty" type="number" placeholder="Количество для всех">
+<input id="commonQty" type="number" placeholder="Общее количество" min="0">
 
 <h4>Размеры</h4>
-<div class="size-row" id="sizeList"></div>
+<div class="sizes" id="sizes"></div>
 
 <input id="brigade" placeholder="№ бригады">
 <input id="people" type="number" placeholder="Людей в бригаде">
 
-<button id="sendBtn">Отправить</button>
+<button onclick="send()">Отправить</button>
 
-<pre id="jsonOutput"></pre>
-
-<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal"></div>
+</div>
 
 <script>
 const tg = window.Telegram.WebApp;
@@ -67,92 +76,40 @@ tg.expand();
 
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw_sM-VQz2gzU1wPE0kgOuXWUDyX40kIjkfOT_l4d1s25Bxtx3Qko_pXo8MUwRDanWlLQ/exec';
 
+const SIZES = [48,50,52,54,56,58,60,62,64];
 let catalog = null;
+let autoFlow = true;
+
 let currentType = '';
 let currentModel = '';
 let currentDesign = '';
 
 const overlay = document.getElementById('overlay');
 const modal = document.getElementById('modal');
-const typeBtn = document.getElementById('typeBtn');
-const modelBtn = document.getElementById('modelBtn');
-const designBtn = document.getElementById('designBtn');
-const sizeList = document.getElementById('sizeList');
-const sameQty = document.getElementById('sameQty');
-const commonQty = document.getElementById('commonQty');
-const sendBtn = document.getElementById('sendBtn');
-const jsonOutput = document.getElementById('jsonOutput');
 
-// ===== Список размеров =====
-const SIZES = [48,50,52,54,56,58,60,62,64];
-
-function renderSizes() {
-  sizeList.innerHTML = '';
-  SIZES.forEach(sz => {
-    const div = document.createElement('div');
-    div.className = 'size-item';
-
-    const chk = document.createElement('input');
-    chk.type = 'checkbox';
-    chk.checked = true;
-    chk.dataset.size = sz;
-
-    const label = document.createElement('span');
-    label.textContent = sz;
-
-    const qty = document.createElement('input');
-    qty.type = 'number';
-    qty.value = 0;
-    qty.dataset.qty = sz;
-
-    chk.addEventListener('change', () => {
-      if (!chk.checked) qty.value = 0;
-    });
-
-    qty.addEventListener('input', () => {
-      if (parseInt(qty.value) > 0) chk.checked = true;
-    });
-
-    div.appendChild(chk);
-    div.appendChild(label);
-    div.appendChild(qty);
-    sizeList.appendChild(div);
-  });
-}
-
-sameQty.onchange = () => {
-  commonQty.disabled = !sameQty.checked;
-};
-commonQty.oninput = () => {
-  if (!sameQty.checked) return;
-  document.querySelectorAll('.size-item input[type="number"]').forEach(inp => {
-    const cb = inp.previousElementSibling;
-    if (cb.checked) inp.value = commonQty.value;
-  });
-};
-
-// ===== загрузка каталога =====
+// — загрузка каталога
 fetch(SCRIPT_URL + '?action=catalog')
   .then(r => r.json())
   .then(data => {
     catalog = data;
     typeBtn.textContent = 'Type: выбрать';
     typeBtn.classList.remove('disabled');
-    typeBtn.onclick();
-  })
-  .catch(console.error);
 
-function openList(title, items, onSelect) {
+    setTimeout(() => typeBtn.click(), 100);
+  });
+
+// — показываем список
+function openList(title, list, onSelect) {
   modal.innerHTML = `<h4>${title}</h4>`;
-  items.forEach(v => {
-    const d = document.createElement('div');
-    d.className = 'option';
-    d.textContent = v;
-    d.onclick = () => {
+  list.forEach(item => {
+    const opt = document.createElement('div');
+    opt.className = 'option';
+    opt.textContent = item;
+    opt.onclick = () => {
       overlay.style.display = 'none';
-      onSelect(v);
+      onSelect(item);
     };
-    modal.appendChild(d);
+    modal.appendChild(opt);
   });
   overlay.style.display = 'block';
 }
@@ -161,69 +118,97 @@ overlay.onclick = e => {
   if (e.target === overlay) overlay.style.display = 'none';
 };
 
-// ===== выбор Type =====
+// — TYPE
 typeBtn.onclick = () => {
   if (!catalog) return;
-  openList('Выберите Type', Object.keys(catalog), val => {
-    currentType = val;
-    typeBtn.textContent = 'Type: ' + val;
-    modelBtn.classList.remove('disabled'); modelBtn.disabled = false;
-    modelBtn.textContent = 'Model';
-    designBtn.textContent = 'Design'; designBtn.disabled = true;
-    currentModel = ''; currentDesign = '';
-  });
-};
+  openList('Тип изделия', Object.keys(catalog), v => {
+    currentType = v;
+    typeBtn.textContent = 'Type: ' + v;
 
-// ===== выбор Model =====
-modelBtn.onclick = () => {
-  if (!catalog || !currentType) return;
-  openList('Выберите Model', Object.keys(catalog[currentType]), val => {
-    currentModel = val;
-    modelBtn.textContent = 'Model: ' + val;
-    designBtn.classList.remove('disabled'); designBtn.disabled = false;
+    modelBtn.disabled = false;
+    modelBtn.classList.remove('disabled');
+    modelBtn.textContent = 'Model: выбрать';
+
+    designBtn.disabled = true;
     designBtn.textContent = 'Design';
+
+    if (autoFlow) setTimeout(() => modelBtn.click(), 150);
   });
 };
 
-// ===== выбор Design =====
+// — MODEL
+modelBtn.onclick = () => {
+  openList('Модель', Object.keys(catalog[currentType]), v => {
+    currentModel = v;
+    modelBtn.textContent = 'Model: ' + v;
+
+    designBtn.disabled = false;
+    designBtn.classList.remove('disabled');
+
+    if (autoFlow) setTimeout(() => designBtn.click(), 150);
+  });
+};
+
+// — DESIGN
 designBtn.onclick = () => {
-  if (!catalog || !currentType || !currentModel) return;
-  openList('Выберите Design', catalog[currentType][currentModel], val => {
-    currentDesign = val;
-    designBtn.textContent = 'Design: /' + val;
+  openList('Дизайн', catalog[currentType][currentModel], v => {
+    currentDesign = v;
+    designBtn.textContent = 'Design: /' + v;
   });
 };
 
-// ===== отправка =====
-sendBtn.onclick = () => {
+// — очередь размеров
+const sizesBox = document.getElementById('sizes');
+SIZES.forEach(s => {
+  const div = document.createElement('div');
+  div.className = 'size';
+  div.innerHTML = `
+    <label><input type="checkbox" checked data-size="${s}"> ${s}</label>
+    <input type="number" data-qty="${s}" value="0" min="0">
+  `;
+  sizesBox.appendChild(div);
+});
+
+// одинаковое количество
+const sameQtyEl = document.getElementById('sameQty');
+const commonQtyEl = document.getElementById('commonQty');
+
+sameQtyEl.onchange = () => {
+  commonQtyEl.disabled = !sameQtyEl.checked;
+};
+
+commonQtyEl.oninput = () => {
+  if (!sameQtyEl.checked) return;
+  document.querySelectorAll('[data-qty]').forEach(inp => {
+    const cb = document.querySelector(`[data-size="${inp.dataset.qty}"]`);
+    if (cb && cb.checked) inp.value = commonQtyEl.value;
+  });
+};
+
+// — отправка
+function send() {
   const sizes = {};
-  document.querySelectorAll('.size-item').forEach(div => {
-    const cb = div.querySelector('input[type="checkbox"]');
-    const qty = div.querySelector('input[type="number"]');
-    if (cb.checked && parseInt(qty.value) > 0) {
-      sizes[cb.dataset.size] = parseInt(qty.value);
-    }
+  document.querySelectorAll('[data-size]').forEach(cb => {
+    const s = cb.dataset.size;
+    const q = parseInt(document.querySelector(`[data-qty="${s}"]`).value) || 0;
+    if (cb.checked && q > 0) sizes[s] = q;
   });
 
   const payload = {
-    telegram_id: tg.initDataUnsafe?.user?.id,
     type: currentType,
     model: currentModel,
     design: currentDesign,
     sizes,
     brigade: document.getElementById('brigade').value,
-    people: document.getElementById('people').value
+    people: document.getElementById('people').value,
+    telegram_id: tg.initDataUnsafe?.user?.id
   };
 
-  jsonOutput.textContent = JSON.stringify(payload, null, 2);
-
-  fetch(SCRIPT_URL, {method: 'POST', body: JSON.stringify(payload)})
-    .then(() => tg.showAlert('Сохранено ✅'))
-    .catch(err => tg.showAlert('Ошибка: ' + err.message));
-};
-
-// рендерим сетку размеров
-renderSizes();
+  fetch(SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }).then(() => tg.showAlert('Сохранено ✅'));
+}
 </script>
 
 </body>
