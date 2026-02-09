@@ -3,188 +3,84 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Отчёт бригады</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://unpkg.com/html5-qrcode"></script>
+<title>Размерная сетка</title>
 <style>
-body { font-family: sans-serif; padding: 16px; }
-h3 { margin-bottom: 16px; }
-select, input, button { width: 100%; margin: 8px 0; padding: 10px; font-size: 16px; }
-#qr-reader { width: 100%; margin: 12px 0; display: none; }
+body { font-family: sans-serif; padding: 20px; }
+h2 { margin-bottom: 16px; }
+.size-row { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; }
+.size-item { display: flex; flex-direction: column; align-items: center; margin: 5px; }
+.size-item input[type="number"] { width: 50px; text-align: center; font-size: 16px; }
+.size-item input[type="checkbox"] { margin-bottom: 4px; transform: scale(1.5); }
+.size-item input[type="number"]:disabled { background: #eee; }
+button { margin-top: 20px; padding: 10px 20px; font-size: 16px; }
+pre { background: #f4f4f4; padding: 10px; }
 </style>
 </head>
 <body>
 
-<h3>Отчёт бригады</h3>
+<h2>Размерная сетка</h2>
 
-<label>Тип изделия</label>
-<select id="typeSelect"><option value="">Выберите тип</option></select>
+<div class="size-row" id="sizeRow"></div>
 
-<label>Номер модели</label>
-<select id="modelSelect"><option value="">Выберите модель</option></select>
+<button id="submitBtn">Посмотреть JSON</button>
 
-<label>Дизайн</label>
-<select id="designSelect"><option value="">Выберите дизайн</option></select>
-
-<input id="size" placeholder="Размер">
-<input id="qty" type="number" placeholder="Количество">
-<input id="brigade" placeholder="№ бригады">
-<input id="people" type="number" placeholder="Людей в бригаде">
-
-<button id="scanBtn">📷 Сканировать код</button>
-<div id="qr-reader"></div>
-
-<button id="sendBtn" disabled>Отправить</button>
+<h3>JSON для отправки:</h3>
+<pre id="jsonOutput">{}</pre>
 
 <script>
-const tg = window.Telegram.WebApp;
-tg.expand();
-tg.ready();
+// Диапазон размеров
+const sizes = [48,50,52,54,56,58,60,62,64];
+const sizeRow = document.getElementById('sizeRow');
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby5MyqWh8toDBpG_M8Z6gNaB86IY6LrZ6gJbLX4bbNGWx6umsyndLhczy31m_JAW8Kg/exec';
-
-let rawModels = [];
-let modelStructure = {};
-
-const typeSelect = document.getElementById('typeSelect');
-const modelSelect = document.getElementById('modelSelect');
-const designSelect = document.getElementById('designSelect');
-const scanBtn = document.getElementById('scanBtn');
-const qrReaderDiv = document.getElementById('qr-reader');
-const size = document.getElementById('size');
-const qty = document.getElementById('qty');
-const brigade = document.getElementById('brigade');
-const people = document.getElementById('people');
-const sendBtn = document.getElementById('sendBtn');
-
-// Загрузка моделей
-fetch(SCRIPT_URL + '?action=models')
-  .then(r => r.json())
-  .then(data => {
-    rawModels = data.filter(v => v);
-    buildModelStructure();
-    populateAllDropdowns();
-  })
-  .catch(err => console.error("Ошибка загрузки моделей:", err));
-
-// Структура {Type, Model, Design} для универсального фильтра
-function buildModelStructure() {
-  modelStructure = {};
-  rawModels.forEach(item => {
-    const type = item.Type.toString();
-    const model = item.Model.toString();
-    const design = item.Design.toString();
-    if (!modelStructure[type]) modelStructure[type] = {};
-    if (!modelStructure[type][model]) modelStructure[type][model] = [];
-    modelStructure[type][model].push(design);
+// Генерация элементов
+sizes.forEach(size=>{
+  const div = document.createElement('div');
+  div.className = 'size-item';
+  
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = true;
+  checkbox.id = `chk-${size}`;
+  
+  const label = document.createElement('label');
+  label.textContent = size;
+  label.htmlFor = checkbox.id;
+  
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = 0;
+  input.value = 0;
+  input.id = `qty-${size}`;
+  
+  // Деактивация поля при снятой галочке
+  checkbox.addEventListener('change', ()=>{
+    input.disabled = !checkbox.checked;
+    if(!checkbox.checked) input.value = 0;
   });
-}
-
-// Заполняем все три выпадающих списка
-function populateAllDropdowns() {
-  populateTypeOptions();
-  populateModelOptions();
-  populateDesignOptions();
-}
-
-// Универсальные функции заполнения
-function populateTypeOptions() {
-  typeSelect.innerHTML = '<option value="">Выберите тип</option>';
-  Object.keys(modelStructure).sort().forEach(t => {
-    const o = document.createElement('option'); o.value = t; o.textContent = t;
-    typeSelect.appendChild(o);
+  
+  // Деактивация, если введен 0
+  input.addEventListener('input', ()=>{
+    if(parseInt(input.value) === 0) checkbox.checked = false;
+    else checkbox.checked = true;
   });
-}
-
-function populateModelOptions() {
-  const selectedType = typeSelect.value;
-  modelSelect.innerHTML = '<option value="">Выберите модель</option>';
-  const models = selectedType ? Object.keys(modelStructure[selectedType]) : [...new Set(rawModels.map(m=>m.Model))];
-  models.sort().forEach(m => {
-    const o = document.createElement('option'); o.value = m; o.textContent = m;
-    modelSelect.appendChild(o);
-  });
-}
-
-function populateDesignOptions() {
-  const selectedType = typeSelect.value;
-  const selectedModel = modelSelect.value;
-  designSelect.innerHTML = '<option value="">Выберите дизайн</option>';
-  let designs = [];
-  if (selectedType && selectedModel) {
-    designs = modelStructure[selectedType][selectedModel];
-  } else if (selectedModel) {
-    designs = rawModels.filter(x=>x.Model===selectedModel).map(x=>x.Design);
-  } else if (selectedType) {
-    designs = Object.values(modelStructure[selectedType]).flat();
-  } else {
-    designs = rawModels.map(x=>x.Design);
-  }
-  [...new Set(designs)].sort().forEach(d => {
-    const o = document.createElement('option'); o.value = d; o.textContent = '/' + d;
-    designSelect.appendChild(o);
-  });
-}
-
-// События изменения
-[typeSelect, modelSelect, designSelect].forEach(sel=>{
-  sel.addEventListener('change', ()=>{
-    populateAllDropdowns(); validateForm();
-  });
+  
+  div.appendChild(checkbox);
+  div.appendChild(label);
+  div.appendChild(input);
+  sizeRow.appendChild(div);
 });
 
-// Проверка формы
-function validateForm() {
-  sendBtn.disabled = !(typeSelect.value && modelSelect.value && designSelect.value && size.value && qty.value && brigade.value && people.value);
-}
-
-// Поля input
-[size.id, qty.id, brigade.id, people.id].forEach(id => {
-  document.getElementById(id).addEventListener('input', validateForm);
-});
-
-// Отправка
-sendBtn.addEventListener('click', ()=>{
-  const payload = {
-    telegram_id: tg.initDataUnsafe?.user?.id,
-    model: `${typeSelect.value}-${modelSelect.value}/${designSelect.value}`,
-    size: size.value,
-    qty: qty.value,
-    brigade: brigade.value,
-    people: people.value
-  };
-  fetch(SCRIPT_URL, {method:'POST', body:JSON.stringify(payload)})
-    .then(()=>{ 
-      tg.showAlert('Сохранено ✅');
-      size.focus();
-      typeSelect.value = ''; modelSelect.value = ''; designSelect.value = '';
-      populateAllDropdowns();
-      size.value=''; qty.value=''; brigade.value=''; people.value='';
-      validateForm();
-    });
-});
-
-// Сканирование QR/штрих-кода
-scanBtn.addEventListener('click', () => {
-  qrReaderDiv.style.display='block'; scanBtn.disabled=true;
-  const html5QrcodeScanner = new Html5Qrcode("qr-reader");
-  html5QrcodeScanner.start(
-    {facingMode:"environment"},
-    {fps:10, qrbox:250},
-    decodedText=>{
-      const match = decodedText.match(/^(\d+)-(\d+)\/(\d+)$/);
-      if(match){
-        const [_, type, model, design]=match;
-        typeSelect.value = type; modelSelect.value=model; designSelect.value=design;
-        populateAllDropdowns(); validateForm();
-        size.focus();
-      } else alert('Некорректный код');
-      html5QrcodeScanner.stop();
-      qrReaderDiv.style.display='none'; scanBtn.disabled=false;
-    },
-    errorMessage=>{}
-  );
+// Кнопка показать JSON
+document.getElementById('submitBtn').addEventListener('click', ()=>{
+  const output = {};
+  sizes.forEach(size=>{
+    const chk = document.getElementById(`chk-${size}`);
+    const qty = parseInt(document.getElementById(`qty-${size}`).value) || 0;
+    if(chk.checked && qty > 0) output[size] = qty;
+  });
+  document.getElementById('jsonOutput').textContent = JSON.stringify(output, null, 2);
 });
 </script>
+
 </body>
 </html>
