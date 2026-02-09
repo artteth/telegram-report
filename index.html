@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Размерная сетка</title>
+<title>Размерная сетка с select</title>
 <style>
 body { font-family: sans-serif; padding: 20px; }
 h2 { margin-bottom: 16px; }
-.size-row { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; }
+.size-row { display: flex; align-items: center; flex-wrap: wrap; }
 .size-item { display: flex; flex-direction: column; align-items: center; margin: 5px; }
-.size-item input[type="number"] { width: 50px; text-align: center; font-size: 16px; }
+.size-item select { width: 50px; font-size: 16px; }
 .size-item input[type="checkbox"] { margin-bottom: 4px; transform: scale(1.5); }
-.size-item input[type="number"]:disabled { background: #eee; }
+.size-item select:disabled { background: #eee; }
 button { margin-top: 20px; padding: 10px 20px; font-size: 16px; }
 pre { background: #f4f4f4; padding: 10px; }
 </style>
@@ -30,6 +30,7 @@ pre { background: #f4f4f4; padding: 10px; }
 <script>
 // Диапазон размеров
 const sizes = [48,50,52,54,56,58,60,62,64];
+const maxQty = 10;
 const sizeRow = document.getElementById('sizeRow');
 
 // Генерация элементов
@@ -46,27 +47,31 @@ sizes.forEach(size=>{
   label.textContent = size;
   label.htmlFor = checkbox.id;
   
-  const input = document.createElement('input');
-  input.type = 'number';
-  input.min = 0;
-  input.value = 0;
-  input.id = `qty-${size}`;
+  const select = document.createElement('select');
+  select.id = `qty-${size}`;
   
-  // Деактивация поля при снятой галочке
+  for(let i=0;i<=maxQty;i++){
+    const option = document.createElement('option');
+    option.value = i;
+    option.textContent = i;
+    select.appendChild(option);
+  }
+  
+  // Деактивация select, если снята галочка
   checkbox.addEventListener('change', ()=>{
-    input.disabled = !checkbox.checked;
-    if(!checkbox.checked) input.value = 0;
+    select.disabled = !checkbox.checked;
+    if(!checkbox.checked) select.value = 0;
   });
   
-  // Деактивация, если введен 0
-  input.addEventListener('input', ()=>{
-    if(parseInt(input.value) === 0) checkbox.checked = false;
-    else checkbox.checked = true;
+  // Авто-снятие галочки, если выбрано 0
+  select.addEventListener('change', ()=>{
+    checkbox.checked = select.value > 0;
+    select.disabled = !checkbox.checked;
   });
   
   div.appendChild(checkbox);
   div.appendChild(label);
-  div.appendChild(input);
+  div.appendChild(select);
   sizeRow.appendChild(div);
 });
 
