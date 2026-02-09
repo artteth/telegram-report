@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Отчёт бригады</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- библиотека для сканирования QR/Barcode -->
+<script src="https://unpkg.com/html5-qrcode"></script>
 <style>
   body { font-family: sans-serif; padding: 16px; }
   h3 { margin-bottom: 16px; }
@@ -13,6 +15,7 @@
   .list-suggestions { border: 1px solid #ccc; max-height: 120px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
   .list-suggestions li { padding: 6px; cursor: pointer; }
   .list-suggestions li:hover { background-color: #eee; }
+  #qr-reader { width: 100%; margin: 12px 0; display: none; }
 </style>
 </head>
 <body>
@@ -44,6 +47,9 @@
 <input id="brigade" placeholder="№ бригады">
 <input id="people" type="number" placeholder="Людей в бригаде">
 
+<button id="scanBtn">📷 Сканировать код</button>
+<div id="qr-reader"></div>
+
 <button id="sendBtn" disabled>Отправить</button>
 
 <script>
@@ -68,6 +74,12 @@ const modelError = document.getElementById('modelError');
 const designSelect = document.getElementById('designSelect');
 const designError = document.getElementById('designError');
 const sendBtn = document.getElementById('sendBtn');
+const scanBtn = document.getElementById('scanBtn');
+const qrReaderDiv = document.getElementById('qr-reader');
+const size = document.getElementById('size');
+const qty = document.getElementById('qty');
+const brigade = document.getElementById('brigade');
+const people = document.getElementById('people');
 
 // Загрузка моделей из таблицы
 fetch(SCRIPT_URL + '?action=models')
@@ -81,7 +93,6 @@ fetch(SCRIPT_URL + '?action=models')
 // Построение структуры для быстрого поиска
 function buildModelStructure() {
   rawModels.forEach(item => {
-    // Формат: 6-11306/4
     const match = item.match(/^(\d+)-(\d+)\/(\d+)$/);
     if (!match) return;
     const type = match[1];
@@ -126,7 +137,7 @@ modelInput.addEventListener('input', e => {
   if (!selectedType || !val) return;
 
   const models = Object.keys(modelStructure[selectedType]);
-  const filtered = models.filter(m => m.startsWith(val)).slice(0, 10); // максимум 10 вариантов
+  const filtered = models.filter(m => m.startsWith(val)).slice(0, 10);
 
   filtered.forEach(m => {
     const li = document.createElement('li');
@@ -173,7 +184,7 @@ function validateForm() {
 }
 
 // Обработка остальных полей
-['size','qty','brigade','people'].forEach(id => {
+[size.id, qty.id, brigade.id, people.id].forEach(id => {
   document.getElementById(id).addEventListener('input', validateForm);
 });
 
@@ -205,6 +216,46 @@ sendBtn.addEventListener('click', () => {
     selectedDesign = '';
     validateForm();
   });
+});
+
+// Сканирование QR / штрих-кода
+scanBtn.addEventListener('click', () => {
+  qrReaderDiv.style.display = 'block';
+  scanBtn.disabled = true;
+
+  const html5QrcodeScanner = new Html5Qrcode("qr-reader");
+  html5QrcodeScanner.start(
+    { facingMode: "environment" },
+    {
+      fps: 10,
+      qrbox: 250
+    },
+    decodedText => {
+      // Предполагаем, что код в формате 6-11306/4
+      const match = decodedText.match(/^(\d+)-(\d+)\/(\d+)$/);
+      if (match) {
+        const type = match[1];
+        const model = match[2];
+        const design = match[3];
+        typeSelect.value = type;
+        typeSelect.dispatchEvent(new Event('change'));
+        modelInput.value = model;
+        selectedModel = model;
+        populateDesigns();
+        designSelect.value = design;
+        selectedDesign = design;
+        validateForm();
+      } else {
+        alert('Некорректный код');
+      }
+      html5QrcodeScanner.stop();
+      qrReaderDiv.style.display = 'none';
+      scanBtn.disabled = false;
+    },
+    errorMessage => {
+      // можно игнорировать ошибки сканирования
+    }
+  );
 });
 </script>
 </body>
