@@ -1,61 +1,187 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Отчёт бригады</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    body { font-family: sans-serif; padding: 16px; }
-    input, button { width: 100%; margin: 8px 0; padding: 10px; font-size: 16px; }
-    .error { color: red; font-size: 14px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Отчёт бригады</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body { font-family: sans-serif; padding: 16px; }
+  h3 { margin-bottom: 16px; }
+  select, input, button { width: 100%; margin: 8px 0; padding: 10px; font-size: 16px; }
+  .error { color: red; font-size: 14px; margin: 4px 0; }
+  .list-suggestions { border: 1px solid #ccc; max-height: 120px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+  .list-suggestions li { padding: 6px; cursor: pointer; }
+  .list-suggestions li:hover { background-color: #eee; }
+</style>
 </head>
 <body>
 
 <h3>Отчёт бригады</h3>
 
-<input list="models" id="model" placeholder="Модель изделия">
-<datalist id="models"></datalist>
+<!-- Тип изделия -->
+<label>Тип изделия</label>
+<select id="typeSelect">
+  <option value="">Выберите тип</option>
+</select>
+
+<!-- Модель -->
+<label>Номер модели</label>
+<input id="modelInput" placeholder="Введите номер модели">
+<ul id="modelSuggestions" class="list-suggestions"></ul>
 <div id="modelError" class="error"></div>
 
+<!-- Дизайн -->
+<label>Дизайн</label>
+<select id="designSelect">
+  <option value="">Выберите дизайн</option>
+</select>
+<div id="designError" class="error"></div>
+
+<!-- Остальные поля -->
 <input id="size" placeholder="Размер">
 <input id="qty" type="number" placeholder="Количество">
 <input id="brigade" placeholder="№ бригады">
 <input id="people" type="number" placeholder="Людей в бригаде">
 
-<button onclick="send()">Отправить</button>
+<button id="sendBtn" disabled>Отправить</button>
 
 <script>
 const tg = window.Telegram.WebApp;
 tg.expand();
+tg.ready();
 
+// URL вашего Google Apps Script
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby5MyqWh8toDBpG_M8cZ6gNaB86IY6LrZ6qYJbLX4bbNGWx6umsyndLhczy31m_JAW8Kg/exec';
 
-let models = [];
+let rawModels = [];
+let modelStructure = {}; // {тип: {номер: [дизайн]}}
+let selectedType = '';
+let selectedModel = '';
+let selectedDesign = '';
 
+// Элементы формы
+const typeSelect = document.getElementById('typeSelect');
+const modelInput = document.getElementById('modelInput');
+const modelSuggestions = document.getElementById('modelSuggestions');
+const modelError = document.getElementById('modelError');
+const designSelect = document.getElementById('designSelect');
+const designError = document.getElementById('designError');
+const sendBtn = document.getElementById('sendBtn');
+
+// Загрузка моделей из таблицы
 fetch(SCRIPT_URL + '?action=models')
   .then(r => r.json())
   .then(data => {
-    models = data;
-    const dl = document.getElementById('models');
-    data.forEach(m => {
-      const o = document.createElement('option');
-      o.value = m;
-      dl.appendChild(o);
-    });
+    rawModels = data.filter(v => v);
+    buildModelStructure();
+    populateTypes();
   });
 
-document.getElementById('model').addEventListener('input', e => {
-  const val = e.target.value;
-  document.getElementById('modelError').textContent =
-    models.includes(val) ? '' : '❌ Такой модели нет';
+// Построение структуры для быстрого поиска
+function buildModelStructure() {
+  rawModels.forEach(item => {
+    // Формат: 6-11306/4
+    const match = item.match(/^(\d+)-(\d+)\/(\d+)$/);
+    if (!match) return;
+    const type = match[1];
+    const model = match[2];
+    const design = match[3];
+    if (!modelStructure[type]) modelStructure[type] = {};
+    if (!modelStructure[type][model]) modelStructure[type][model] = [];
+    modelStructure[type][model].push(design);
+  });
+}
+
+// Заполнение типов изделий
+function populateTypes() {
+  Object.keys(modelStructure).sort().forEach(t => {
+    const o = document.createElement('option');
+    o.value = t;
+    o.textContent = t;
+    typeSelect.appendChild(o);
+  });
+}
+
+// Обработка выбора типа
+typeSelect.addEventListener('change', e => {
+  selectedType = e.target.value;
+  selectedModel = '';
+  selectedDesign = '';
+  modelInput.value = '';
+  designSelect.innerHTML = '<option value="">Выберите дизайн</option>';
+  modelSuggestions.innerHTML = '';
+  validateForm();
 });
 
-function send() {
+// Обработка ввода модели
+modelInput.addEventListener('input', e => {
+  selectedModel = '';
+  selectedDesign = '';
+  designSelect.innerHTML = '<option value="">Выберите дизайн</option>';
+  modelSuggestions.innerHTML = '';
+  modelError.textContent = '';
+
+  const val = e.target.value.trim();
+  if (!selectedType || !val) return;
+
+  const models = Object.keys(modelStructure[selectedType]);
+  const filtered = models.filter(m => m.startsWith(val)).slice(0, 10); // максимум 10 вариантов
+
+  filtered.forEach(m => {
+    const li = document.createElement('li');
+    li.textContent = m;
+    li.addEventListener('click', () => {
+      modelInput.value = m;
+      selectedModel = m;
+      populateDesigns();
+      modelSuggestions.innerHTML = '';
+      validateForm();
+    });
+    modelSuggestions.appendChild(li);
+  });
+
+  if (!filtered.length && val.length > 0) {
+    modelError.textContent = '❌ Такой модели нет';
+  }
+});
+
+// Заполнение дизайнов для выбранной модели
+function populateDesigns() {
+  designSelect.innerHTML = '<option value="">Выберите дизайн</option>';
+  if (!selectedType || !selectedModel) return;
+  const designs = modelStructure[selectedType][selectedModel];
+  designs.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d;
+    o.textContent = '/' + d;
+    designSelect.appendChild(o);
+  });
+}
+
+// Обработка выбора дизайна
+designSelect.addEventListener('change', e => {
+  selectedDesign = e.target.value;
+  validateForm();
+});
+
+// Валидация формы
+function validateForm() {
+  const valid = selectedType && selectedModel && selectedDesign &&
+                size.value.trim() && qty.value && brigade.value.trim() && people.value;
+  sendBtn.disabled = !valid;
+}
+
+// Обработка остальных полей
+['size','qty','brigade','people'].forEach(id => {
+  document.getElementById(id).addEventListener('input', validateForm);
+});
+
+// Отправка данных
+sendBtn.addEventListener('click', () => {
   const payload = {
     telegram_id: tg.initDataUnsafe?.user?.id,
-    model: model.value,
+    model: `${selectedType}-${selectedModel}/${selectedDesign}`,
     size: size.value,
     qty: qty.value,
     brigade: brigade.value,
@@ -67,9 +193,19 @@ function send() {
     body: JSON.stringify(payload)
   }).then(() => {
     tg.showAlert('Сохранено ✅');
+    // очистка формы
+    modelInput.value = '';
+    modelSuggestions.innerHTML = '';
+    designSelect.innerHTML = '<option value="">Выберите дизайн</option>';
+    size.value = '';
+    qty.value = '';
+    brigade.value = '';
+    people.value = '';
+    selectedModel = '';
+    selectedDesign = '';
+    validateForm();
   });
-}
+});
 </script>
-
 </body>
 </html>
