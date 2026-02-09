@@ -10,6 +10,7 @@
 body { font-family: sans-serif; padding: 16px; }
 button, input { width: 100%; margin: 8px 0; padding: 12px; font-size: 16px; }
 .selector { background: #f2f2f2; text-align: left; }
+.disabled { opacity: .6; }
 .overlay {
   position: fixed; inset: 0;
   background: rgba(0,0,0,.4);
@@ -29,15 +30,35 @@ button, input { width: 100%; margin: 8px 0; padding: 12px; font-size: 16px; }
   border-bottom: 1px solid #eee;
 }
 .option:active { background: #eee; }
+
+.sizes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.size {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: center;
+}
 </style>
 </head>
 
 <body>
 <h3>Отчёт бригады</h3>
 
-<button id="typeBtn" class="selector">Type: выбрать</button>
-<button id="modelBtn" class="selector" disabled>Model: выбрать</button>
-<button id="designBtn" class="selector" disabled>Design: выбрать</button>
+<button id="typeBtn" class="selector disabled">Type: загрузка…</button>
+<button id="modelBtn" class="selector disabled" disabled>Model</button>
+<button id="designBtn" class="selector disabled" disabled>Design</button>
+
+<label>
+  <input type="checkbox" id="sameQty" checked>
+  одинаковое количество
+</label>
+<input id="commonQty" type="number" placeholder="Количество для всех">
+
+<h4>Размеры</h4>
+<div class="sizes" id="sizes"></div>
 
 <input id="brigade" placeholder="№ бригады">
 <input id="people" type="number" placeholder="Людей в бригаде">
@@ -54,17 +75,24 @@ tg.expand();
 
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw_sM-VQz2gzU1wPE0kgOuXWUDyX40kIjkfOT_l4d1s25Bxtx3Qko_pXo8MUwRDanWlLQ/exec';
 
-let catalog = {};
-let currentType = '';
-let currentModel = '';
-let currentDesign = '';
+const SIZES = [48,50,52,54,56,58,60,62,64];
 
-const overlay = document.getElementById('overlay');
+let catalog = null;
+let openAfterLoad = false;
+let currentType='', currentModel='', currentDesign='';
+
+const overlay = overlayEl = document.getElementById('overlay');
 const modal = document.getElementById('modal');
 
+/* ===== загрузка каталога ===== */
 fetch(SCRIPT_URL + '?action=catalog')
   .then(r => r.json())
-  .then(data => catalog = data);
+  .then(data => {
+    catalog = data;
+    typeBtn.textContent = 'Type: выбрать';
+    typeBtn.classList.remove('disabled');
+    if (openAfterLoad) typeBtn.click();
+  });
 
 function openList(title, items, onSelect) {
   modal.innerHTML = `<h4>${title}</h4>`;
@@ -85,25 +113,31 @@ overlay.onclick = e => {
   if (e.target === overlay) overlay.style.display = 'none';
 };
 
+/* ===== TYPE ===== */
 typeBtn.onclick = () => {
+  if (!catalog) { openAfterLoad = true; return; }
   openList('Тип изделия', Object.keys(catalog), v => {
     currentType = v;
     typeBtn.textContent = 'Type: ' + v;
     modelBtn.disabled = false;
-    designBtn.disabled = true;
+    modelBtn.classList.remove('disabled');
     modelBtn.textContent = 'Model: выбрать';
-    designBtn.textContent = 'Design: выбрать';
+    designBtn.disabled = true;
+    designBtn.textContent = 'Design';
   });
 };
 
+/* ===== MODEL ===== */
 modelBtn.onclick = () => {
   openList('Модель', Object.keys(catalog[currentType]), v => {
     currentModel = v;
     modelBtn.textContent = 'Model: ' + v;
     designBtn.disabled = false;
+    designBtn.classList.remove('disabled');
   });
 };
 
+/* ===== DESIGN ===== */
 designBtn.onclick = () => {
   openList('Дизайн', catalog[currentType][currentModel], v => {
     currentDesign = v;
@@ -111,13 +145,43 @@ designBtn.onclick = () => {
   });
 };
 
+/* ===== размеры ===== */
+const sizesBox = document.getElementById('sizes');
+
+SIZES.forEach(s => {
+  sizesBox.innerHTML += `
+    <div class="size">
+      <label><input type="checkbox" checked data-size="${s}"> ${s}</label>
+      <input type="number" data-qty="${s}" value="0">
+    </div>`;
+});
+
+sameQty.onchange = () => commonQty.disabled = !sameQty.checked;
+
+commonQty.oninput = () => {
+  if (!sameQty.checked) return;
+  document.querySelectorAll('[data-qty]').forEach(i => {
+    const cb = document.querySelector(`[data-size="${i.dataset.qty}"]`);
+    if (cb.checked) i.value = commonQty.value;
+  });
+};
+
+/* ===== отправка ===== */
 function send() {
+  const sizes = {};
+  document.querySelectorAll('[data-size]').forEach(cb => {
+    const s = cb.dataset.size;
+    const q = document.querySelector(`[data-qty="${s}"]`).value;
+    if (cb.checked && q > 0) sizes[s] = q;
+  });
+
   fetch(SCRIPT_URL, {
     method: 'POST',
     body: JSON.stringify({
       type: currentType,
       model: currentModel,
       design: currentDesign,
+      sizes,
       brigade: brigade.value,
       people: people.value,
       telegram_id: tg.initDataUnsafe?.user?.id
